@@ -94,6 +94,6 @@ USER user
 
 # OpenVINO Pre-trained model downloader dep
 RUN pip3 install PyYAML image==1.5.27 ipdb==0.12.3 ipython==7.10.2 \
-    numpy==1.17.4 Pillow==6.2.1 requests==2.22.0
+    numpy==1.17.4 Pillow==6.2.1 requests==2.22.0 imutils
 
 RUN echo "source /opt/intel/openvino/bin/setupvars.sh -pyver 3.5" >> ~/.bashrc
