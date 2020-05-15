@@ -103,9 +103,10 @@ class LandMarkEestimator:
         status = self.exec_network.requests[request_id].wait(-1)
         return status
 
-
     def get_output(self, request_id):
         '''
         Returns a list of the results for the output layer of the network.
         '''
-        return self.exec_network.requests[request_id].outputs[self.output_blob]
+        output = self.exec_network.requests[request_id].outputs[self.output_blob]
+
+        return output

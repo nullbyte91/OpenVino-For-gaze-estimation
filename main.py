@@ -40,6 +40,14 @@ def draw_axis(img, R, t, K):
     img = cv2.line(img, tuple(axisPoints[3].ravel()), tuple(axisPoints[2].ravel()), (0,0,255), 3)
     return img
 
+def createEyeBoundingBox(x_point, y_point, scale=1.8):
+    print(x_point)
+    print(y_point)
+
+    size  = cv2.norm(x_point - y_point)
+    print(size)
+    exit(1)
+
 def main():
     # Set log to INFO
     log.basicConfig(level=log.INFO)
@@ -114,9 +122,11 @@ def main():
                     faceBoundingBox = detection[0, 0, i, 3:7] * np.array([fw, fh, fw, fh])
                     (startX, startY, endX, endY) = faceBoundingBox.astype("int")
                     image_fc = frame[startY:endY, startX:endX]
+                    print(image_fc.shape[0])
+                    print(image_fc.shape[1])
 
-                    #Head position
-                    # Get a Input blob shape of face detection
+                    # Head position
+                    # Get a Input blob shape of head position
                     in_n, in_c, in_h, in_w = head_position.get_input_shape()
                     print("in_n:{} in_c:{} in_h:{} in_w:{}".format(in_n, in_c, in_h, in_w))
                     image_h = cv2.resize(image_fc, (in_w, in_h), interpolation = cv2.INTER_AREA)
@@ -128,6 +138,34 @@ def main():
                         headPoseAngles['x'] = head_positions["angle_y_fc"][0]
                         headPoseAngles['y'] = head_positions["angle_p_fc"][0]
                         headPoseAngles['z'] = head_positions["angle_r_fc"][0]
+                        print(headPoseAngles['x'])
+                        print(headPoseAngles['y'])
+                        print(headPoseAngles['z'])
+
+                    # Landmark detector
+                    # Get a Input blob shape of face detection
+                    in_n, in_c, in_h, in_w = landmark_estimator.get_input_shape()
+                    image_l = cv2.resize(image_fc, (in_w, in_h), interpolation = cv2.INTER_AREA)
+                    image_l = np.moveaxis(image_l, -1, 0)
+                    print(image_l.shape)
+                    faceLandmarks = []
+                    landmark_estimator.exec_net(image_l, request_id=0)
+                    if landmark_estimator.wait(request_id=0) == 0:
+                        output = landmark_estimator.get_output(request_id=0)
+                        x0 = int(output[0][0] * image_fc.shape[1] + startX)
+                        y0 = int(output[0][1] * image_fc.shape[0] + startY)
+                        faceLandmarks.append([x0, y0])
+                        x1 = int(output[0][2] * image_fc.shape[1] + startX)
+                        y1 = int(output[0][3] * image_fc.shape[0] + startY)
+                        faceLandmarks.append([x1, y1])
+                        x2 = int(output[0][4] * image_fc.shape[1] + startX)
+                        y2 = int(output[0][5] * image_fc.shape[0] + startY)
+                        faceLandmarks.append([x2, y2])
+                        x3 = int(output[0][6] * image_fc.shape[1] + startX)
+                        y3 = int(output[0][7] * image_fc.shape[0] + startY)
+                        faceLandmarks.append([x3, y3])
+                    
+
         cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
