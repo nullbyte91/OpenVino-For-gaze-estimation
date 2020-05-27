@@ -24,6 +24,10 @@ import sys
 import logging as log
 from openvino.inference_engine import IENetwork, IECore
 
+import argparse
+import cv2
+import numpy as np
+
 class FaceDetector:
     """
     Load and configure inference plugins for the specified target devices 
@@ -47,7 +51,6 @@ class FaceDetector:
         '''
         model_xml = model
         model_bin = os.path.splitext(model_xml)[0] + ".bin"
-
         
         # Initialize the plugin
         self.plugin = IECore()
@@ -109,3 +112,47 @@ class FaceDetector:
         Returns a list of the results for the output layer of the network.
         '''
         return self.exec_network.requests[request_id].outputs[self.output_blob]
+
+
+def main(args):
+    ie = IECore()
+    faceDetector = FaceDetector()
+    faceDetector.load_model(ie, args.model, "CPU", num_requests=0)
+    # Get a Input blob shape of face detection
+    _, _, in_h, in_w = faceDetector.get_input_shape()
+    
+    image_o = cv2.imread(args.input)
+    fh = image_o.shape[0]
+    fw = image_o.shape[1]
+    
+    image_resize = cv2.resize(image_o, (in_w, in_h), interpolation = cv2.INTER_AREA)
+    image = np.moveaxis(image_resize, -1, 0)
+
+    # Perform inference on the frame
+    faceDetector.exec_net(image, request_id=0)
+
+    # Get the output of inference
+    if faceDetector.wait(request_id=0) == 0:
+        detection = faceDetector.get_output(request_id=0)
+        for i in range(0, detection.shape[2]):
+                confidence = detection[0, 0, i, 2]
+                # If confidence > 0.5, save it as a separate file
+                if (confidence > 0.5):
+                    faceBoundingBox = detection[0, 0, i, 3:7] * np.array([fw, fh, fw, fh])
+                    (startX, startY, endX, endY) = faceBoundingBox.astype("int")
+                    # image_fc = frame[startY:endY, startX:endX]
+                    cv2.rectangle(image_o, (startX, startY), (endX, endY), (0, 125, 255), 3)
+                    image_fc = image_o[startY:endY, startX:endX]
+                    cv2.imwrite('resource/facedetection.png', image_fc)
+
+    cv2.imshow('frame', image_o)
+    cv2.waitKey(0)
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--model', required=False, type=str,
+                    default="mo_model/intel/face-detection-adas-binary-0001/FP32-INT1/face-detection-adas-binary-0001.xml")
+    parser.add_argument("-i", "--input", required=False, type=str, 
+                        default='resource/example_02.jpg', help="Path to image or video file")
+    args=parser.parse_args()
+    main(args)
