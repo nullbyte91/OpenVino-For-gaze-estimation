@@ -23,6 +23,10 @@ import os
 import sys
 import logging as log
 from openvino.inference_engine import IENetwork, IECore
+import argparse 
+import cv2
+import numpy as np
+from math import cos, sin, pi
 
 class HeadPosEstimator:
     """
@@ -111,4 +115,51 @@ class HeadPosEstimator:
         head_positions = (self.exec_network.requests[request_id].outputs)
         return head_positions
 
+def main(args):
+
+    headPoseAngles = {
+        "p": 0,
+        "r": 0,
+        "y": 0
+    }
+
+    ie = IECore()
+    head_position = HeadPosEstimator()
+    head_position.load_model(ie, args.model, "CPU", num_requests=0)
+    # Get a Input blob shape of face detection
+    _, _, in_h, in_w = head_position.get_input_shape()
     
+    image_o = cv2.imread(args.input)
+    fh = image_o.shape[0]
+    fw = image_o.shape[1]
+    
+    image_resize = cv2.resize(image_o, (in_w, in_h), interpolation = cv2.INTER_AREA)
+    image = np.moveaxis(image_resize, -1, 0)
+
+    # Perform inference on the frame
+    head_position.exec_net(image, request_id=0)
+
+    # Get the output of inference
+    if head_position.wait(request_id=0) == 0:
+        head_positions = head_position.get_output(request_id=0)
+        headPoseAngles['y'] = head_positions["angle_y_fc"][0]
+        headPoseAngles['p'] = head_positions["angle_p_fc"][0]
+        headPoseAngles['r'] = head_positions["angle_r_fc"][0]
+        cos_r = cos(headPoseAngles['r'] * pi / 180)
+        sin_r = sin(headPoseAngles['r'] * pi / 180)
+        sin_y = sin(headPoseAngles['y'] * pi / 180)
+        cos_y = cos(headPoseAngles['y'] * pi / 180)
+        sin_p = sin(headPoseAngles['p'] * pi / 180)
+        cos_p = cos(headPoseAngles['p'] * pi / 180)
+        
+    # cv2.imshow('frame', image_o)
+    # cv2.waitKey(0)
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--model', required=False, type=str,
+                    default="mo_model/intel/head-pose-estimation-adas-0001/FP32/head-pose-estimation-adas-0001.xml")
+    parser.add_argument("-i", "--input", required=False, type=str, 
+                        default='resource/facedetection.png', help="Path to image or video file")
+    args=parser.parse_args()
+    main(args)

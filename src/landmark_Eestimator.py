@@ -10,11 +10,11 @@
  the following conditions:
  The above copyright notice and this permission notice shall be
  included in all copies or substantial portions of the Software.
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,s
  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
- LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION     
  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
@@ -23,12 +23,31 @@ import os
 import sys
 import logging as log
 from openvino.inference_engine import IENetwork, IECore
+import numpy as np
 
 class LandMarkEestimator:
     """
     Load and configure inference plugins for the specified target devices 
     and performs synchronous and asynchronous modes for the specified infer requests.
     """
+
+    POINTS_NUMBER = 5
+
+    class Result:
+        def __init__(self, outputs):
+            self.points = outputs
+
+            p = lambda i: self[i]
+            self.left_eye = p(0)
+            self.right_eye = p(1)
+            self.nose_tip = p(2)
+            self.left_lip_corner = p(3)
+            self.right_lip_corner = p(4)
+        def __getitem__(self, idx):
+            return self.points[idx]
+
+        def get_array(self):
+            return np.array(self.points, dtype=np.float64)
 
     def __init__(self):
         self.plugin = None
@@ -108,5 +127,6 @@ class LandMarkEestimator:
         Returns a list of the results for the output layer of the network.
         '''
         output = self.exec_network.requests[request_id].outputs[self.output_blob]
-
-        return output
+        print(self.output_blob)
+        result = LandMarkEestimator.Result(output.reshape((-1, 2)))
+        return result
