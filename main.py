@@ -41,13 +41,27 @@ def draw_axis(img, R, t, K):
     img = cv2.line(img, tuple(axisPoints[3].ravel()), tuple(axisPoints[2].ravel()), (0,0,255), 3)
     return img
 
-def createEyeBoundingBox(x_point, y_point, scale=1.8):
-    print(x_point)
-    print(y_point)
+def createEyeBoundingBox(point_x, point_y, scale=1.8):
+    print(point_x)
+    print(point_y)
+    size  = cv2.norm(np.float32(point_x) - point_y)
+    width = scale * size
+    height = width
+    midpoint_x = (point_x[0] + point_y[0]) / 2
+    midpoint_y = (point_x[1] + point_y[1]) / 2
+    result_x  = midpoint_x - (width / 2)
+    result_y  = midpoint_y - (height / 2)
+    print("result_x:{} result_y:{} height:{} width:{}".format(result_x, result_y, height, width))
+    return [int(result_x), int(result_y), int(height), int(width)]
 
-    size  = cv2.norm(x_point - y_point)
-    print(size)
-    exit(1)
+def preprocess_output(outputs, width, height):
+    coord=outputs[0]
+    lef_eye_x=(coord[0].tolist()[0][0])*width
+    lef_eye_y=(coord[1].tolist()[0][0])*height
+    rig_eye_x=(coord[2].tolist()[0][0])*width
+    rig_eye_y=(coord[3].tolist()[0][0])*height
+    
+    return lef_eye_x,lef_eye_y,rig_eye_x,rig_eye_y
 
 def main():
     # Set log to INFO
@@ -123,10 +137,10 @@ def main():
                     ymin = int(detection[0, 0, i, 4] * fh)
                     xmax = int(detection[0, 0, i, 5] * fw)
                     ymax = int(detection[0, 0, i, 6] * fh)
-                    xmax = max(1, min(xmax, fw - 1))
-                    ymax = max(1, min(ymax, fh - 1))
-                    xmin = max(0, min(xmin, xmax - 1))
-                    ymin = max(0, min(ymin, ymax - 1))
+                    # xmax = max(1, min(xmax, fw - 1))
+                    # ymax = max(1, min(ymax, fh - 1))
+                    # xmin = max(0, min(xmin, xmax - 1))
+                    # ymin = max(0, min(ymin, ymax - 1))
 
                     # Head position
                     image_fc = frame[ymin:ymax+1, xmin:xmax+1]
@@ -160,28 +174,48 @@ def main():
 
                     # Landmark detector
                     # Get a Input blob shape of face detection
-                    # in_n, in_c, in_h, in_w = landmark_estimator.get_input_shape()
-                    # image_l = cv2.resize(image_fc, (in_w, in_h), interpolation = cv2.INTER_AREA)
-                    # image_l = np.moveaxis(image_l, -1, 0)
-                    # print(image_l.shape)
-                    # faceLandmarks = []
-                    # landmark_estimator.exec_net(image_l, request_id=0)
-                    # if landmark_estimator.wait(request_id=0) == 0:
-                    #     output = landmark_estimator.get_output(request_id=0)
-                    #     x0 = int(output[0][0] * image_fc.shape[1] + startX)
-                    #     y0 = int(output[0][1] * image_fc.shape[0] + startY)
-                    #     faceLandmarks.append([x0, y0])
-                    #     x1 = int(output[0][2] * image_fc.shape[1] + startX)
-                    #     y1 = int(output[0][3] * image_fc.shape[0] + startY)
-                    #     faceLandmarks.append([x1, y1])
-                    #     x2 = int(output[0][4] * image_fc.shape[1] + startX)
-                    #     y2 = int(output[0][5] * image_fc.shape[0] + startY)
-                    #     faceLandmarks.append([x2, y2])
-                    #     x3 = int(output[0][6] * image_fc.shape[1] + startX)
-                    #     y3 = int(output[0][7] * image_fc.shape[0] + startY)
-                    #     faceLandmarks.append([x3, y3])
-                    
-
+                    _, _, in_l_h, in_l_w = landmark_estimator.get_input_shape()
+                    image_l = cv2.resize(image_fc, (in_l_w, in_l_h), interpolation = cv2.INTER_AREA)
+                    image_l = np.moveaxis(image_l, -1, 0)
+                    print(image_l.shape)
+                    faceLandmarks = []
+                    landmark_estimator.exec_net(image_l, request_id=0)
+                    if landmark_estimator.wait(request_id=0) == 0:
+                        output = landmark_estimator.get_output(request_id=0)
+                        c_h = image_fc.shape[0]
+                        c_w = image_fc.shape[1]
+                        output = preprocess_output(output, c_w, c_h)
+                        out = np.asarray(output)
+                        coords=out.astype(np.int32)
+                        left_eye_xmin=coords[0]-15
+                        left_eye_ymin=coords[1]-15
+                        left_eye_xmax=coords[0]+15
+                        left_eye_ymax=coords[1]+15
+                        right_eye_xmin=coords[2]-15
+                        right_eye_ymin=coords[3]-15
+                        right_eye_xmax=coords[2]+15
+                        right_eye_ymax=coords[3]+15
+                        left_eye_coords=image_fc[left_eye_ymin:left_eye_ymax,left_eye_xmin:left_eye_xmax]
+                        right_eye_coords=image_fc[right_eye_ymin:right_eye_ymax,right_eye_xmin:right_eye_xmax]
+                        eye_coords=[[left_eye_xmin,left_eye_ymin,left_eye_xmax,left_eye_ymax],[right_eye_xmin,right_eye_ymin,right_eye_xmax,right_eye_ymax]]
+                        cv2.rectangle(frame,(left_eye_xmin,left_eye_ymin),(left_eye_xmax,left_eye_ymax),(0,0,255), 4)
+                        cv2.rectangle(frame,(right_eye_xmin,right_eye_ymin),(right_eye_xmax,right_eye_ymax),(0,0,255), 4)
+                        # x0 = int(output[0][0] * image_fc.shape[1] + xmin)
+                        # y0 = int(output[0][1] * image_fc.shape[0] + ymin)
+                        # faceLandmarks.append([x0, y0])
+                        # x1 = int(output[0][2] * image_fc.shape[1] + xmin)
+                        # y1 = int(output[0][3] * image_fc.shape[0] + ymin)
+                        # faceLandmarks.append([x1, y1])
+                        # x2 = int(output[0][4] * image_fc.shape[1] + xmin)
+                        # y2 = int(output[0][5] * image_fc.shape[0] + ymin)
+                        # faceLandmarks.append([x2, y2])
+                        # x3 = int(output[0][6] * image_fc.shape[1] + xmin)
+                        # y3 = int(output[0][7] * image_fc.shape[0] + ymin)
+                        # faceLandmarks.append([x3, y3])
+                        # print(faceLandmarks)
+                        # leftEyeBoundingBox = createEyeBoundingBox(faceLandmarks[0], faceLandmarks[1])
+                        # rightEyeBoundingBox = createEyeBoundingBox(faceLandmarks[2], faceLandmarks[3])
+                        
         cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
