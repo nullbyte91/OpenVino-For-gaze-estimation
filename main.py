@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 
 from openvino.inference_engine import IENetwork, IECore
 from src import faceDetector, headPos_Estimator, landmark_Eestimator, gaze_Estimator
+from math import cos, sin, pi
 
 CPU_DEVICE_NAME = "CPU"
 
@@ -83,7 +84,7 @@ def main():
     gaze_estimator.load_model(ie, args.model_landmark_estimation, "CPU", num_requests=0)
 
     # Get a Input blob shape of face detection
-    _, _, in_h, in_w = face_detection.get_input_shape()
+    _, _, in_h_f, in_w_f = face_detection.get_input_shape()
 
     fps = FPS().start()
 
@@ -97,18 +98,17 @@ def main():
         fw = frame.shape[1]
         key_pressed = cv2.waitKey(50)
     
-        image_resize = cv2.resize(frame, (in_w, in_h), interpolation = cv2.INTER_AREA)
+        image_resize = cv2.resize(frame, (in_w_f, in_h_f), interpolation = cv2.INTER_AREA)
         image = np.moveaxis(image_resize, -1, 0)
 
         # Perform inference on the frame
         face_detection.exec_net(image, request_id=0)
 
         # Variable that shared across between model
-        faceBoundingBox = []
         headPoseAngles = {
-        "x": 0,
-        "y": 0,
-        "z": 0
+            "p": 0,
+            "r": 0,
+            "y": 0
         }
 
         # Get the output of inference
@@ -119,51 +119,67 @@ def main():
                 confidence = detection[0, 0, i, 2]
                 # If confidence > 0.5, save it as a separate file
                 if (confidence > 0.5):
-                    faceBoundingBox = detection[0, 0, i, 3:7] * np.array([fw, fh, fw, fh])
-                    (startX, startY, endX, endY) = faceBoundingBox.astype("int")
-                    image_fc = frame[startY:endY, startX:endX]
-                    print(image_fc.shape[0])
-                    print(image_fc.shape[1])
+                    xmin = int(detection[0, 0, i, 3] * fw)
+                    ymin = int(detection[0, 0, i, 4] * fh)
+                    xmax = int(detection[0, 0, i, 5] * fw)
+                    ymax = int(detection[0, 0, i, 6] * fh)
+                    xmax = max(1, min(xmax, fw - 1))
+                    ymax = max(1, min(ymax, fh - 1))
+                    xmin = max(0, min(xmin, xmax - 1))
+                    ymin = max(0, min(ymin, ymax - 1))
 
                     # Head position
+                    image_fc = frame[ymin:ymax+1, xmin:xmax+1]
                     # Get a Input blob shape of head position
-                    in_n, in_c, in_h, in_w = head_position.get_input_shape()
-                    print("in_n:{} in_c:{} in_h:{} in_w:{}".format(in_n, in_c, in_h, in_w))
-                    image_h = cv2.resize(image_fc, (in_w, in_h), interpolation = cv2.INTER_AREA)
+                    _, _, in_h_h, in_h_w = head_position.get_input_shape()
+                    image_h = cv2.resize(image_fc, (in_h_w, in_h_h), interpolation = cv2.INTER_AREA)
                     image_h = np.moveaxis(image_h, -1, 0)
-                    print(image_h.shape)
                     head_position.exec_net(image_h, request_id=0)
                     if head_position.wait(request_id=0) == 0:
                         head_positions = head_position.get_output(request_id=0)
-                        headPoseAngles['x'] = head_positions["angle_y_fc"][0]
-                        headPoseAngles['y'] = head_positions["angle_p_fc"][0]
-                        headPoseAngles['z'] = head_positions["angle_r_fc"][0]
-                        print(headPoseAngles['x'])
-                        print(headPoseAngles['y'])
-                        print(headPoseAngles['z'])
+                        headPoseAngles['y'] = head_positions["angle_y_fc"][0]
+                        headPoseAngles['p'] = head_positions["angle_p_fc"][0]
+                        headPoseAngles['r'] = head_positions["angle_r_fc"][0]
+                        cos_r = cos(headPoseAngles['r'] * pi / 180)
+                        sin_r = sin(headPoseAngles['r'] * pi / 180)
+                        sin_y = sin(headPoseAngles['y'] * pi / 180)
+                        cos_y = cos(headPoseAngles['y'] * pi / 180)
+                        sin_p = sin(headPoseAngles['p'] * pi / 180)
+                        cos_p = cos(headPoseAngles['p'] * pi / 180)
+
+                        x = int((xmin + xmax) / 2)
+                        y = int((ymin + ymax) / 2)
+
+                        # center to right
+                        cv2.line(frame, (x,y), (x+int(50*(cos_r*cos_y+sin_y*sin_p*sin_r)), y+int(50*cos_p*sin_r)), (0, 0, 255), thickness=3)
+                        # center to top
+                        cv2.line(frame, (x, y), (x+int(50*(cos_r*sin_y*sin_p+cos_y*sin_r)), y-int(50*cos_p*cos_r)), (0, 255, 0), thickness=3)
+                        # center to forward
+                        cv2.line(frame, (x, y), (x + int(50*sin_y*cos_p), y + int(50*sin_p)), (255, 0, 0), thickness=3)
+                        cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 0, 255), 2)
 
                     # Landmark detector
                     # Get a Input blob shape of face detection
-                    in_n, in_c, in_h, in_w = landmark_estimator.get_input_shape()
-                    image_l = cv2.resize(image_fc, (in_w, in_h), interpolation = cv2.INTER_AREA)
-                    image_l = np.moveaxis(image_l, -1, 0)
-                    print(image_l.shape)
-                    faceLandmarks = []
-                    landmark_estimator.exec_net(image_l, request_id=0)
-                    if landmark_estimator.wait(request_id=0) == 0:
-                        output = landmark_estimator.get_output(request_id=0)
-                        x0 = int(output[0][0] * image_fc.shape[1] + startX)
-                        y0 = int(output[0][1] * image_fc.shape[0] + startY)
-                        faceLandmarks.append([x0, y0])
-                        x1 = int(output[0][2] * image_fc.shape[1] + startX)
-                        y1 = int(output[0][3] * image_fc.shape[0] + startY)
-                        faceLandmarks.append([x1, y1])
-                        x2 = int(output[0][4] * image_fc.shape[1] + startX)
-                        y2 = int(output[0][5] * image_fc.shape[0] + startY)
-                        faceLandmarks.append([x2, y2])
-                        x3 = int(output[0][6] * image_fc.shape[1] + startX)
-                        y3 = int(output[0][7] * image_fc.shape[0] + startY)
-                        faceLandmarks.append([x3, y3])
+                    # in_n, in_c, in_h, in_w = landmark_estimator.get_input_shape()
+                    # image_l = cv2.resize(image_fc, (in_w, in_h), interpolation = cv2.INTER_AREA)
+                    # image_l = np.moveaxis(image_l, -1, 0)
+                    # print(image_l.shape)
+                    # faceLandmarks = []
+                    # landmark_estimator.exec_net(image_l, request_id=0)
+                    # if landmark_estimator.wait(request_id=0) == 0:
+                    #     output = landmark_estimator.get_output(request_id=0)
+                    #     x0 = int(output[0][0] * image_fc.shape[1] + startX)
+                    #     y0 = int(output[0][1] * image_fc.shape[0] + startY)
+                    #     faceLandmarks.append([x0, y0])
+                    #     x1 = int(output[0][2] * image_fc.shape[1] + startX)
+                    #     y1 = int(output[0][3] * image_fc.shape[0] + startY)
+                    #     faceLandmarks.append([x1, y1])
+                    #     x2 = int(output[0][4] * image_fc.shape[1] + startX)
+                    #     y2 = int(output[0][5] * image_fc.shape[0] + startY)
+                    #     faceLandmarks.append([x2, y2])
+                    #     x3 = int(output[0][6] * image_fc.shape[1] + startX)
+                    #     y3 = int(output[0][7] * image_fc.shape[0] + startY)
+                    #     faceLandmarks.append([x3, y3])
                     
 
         cv2.imshow('frame', frame)
